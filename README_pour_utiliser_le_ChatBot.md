@@ -1,10 +1,12 @@
 # EI_GR6_2024
 
+## Membres du groupe
 
+Bilal Azzi, Mohamed Cheikh Rouhou, Mohamed Bouhamed, Omar Amari, Adam Hachicha
 
 ## Installation du produit
 
-Ouvrir le fichier Produit_final et créer un dossier RAG_IPCC dans le répertoire de travail. 
+Ouvrir le fichier Produit_final et créer un dossier RAG_IPCC dans le répertoire de travail, sur Google Colab.
 
 Placer les quatres documents du GIEC dans ce dossier :
 
