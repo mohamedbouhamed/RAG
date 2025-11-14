@@ -4,7 +4,7 @@ emoji: "🤖"
 colorFrom: "blue"
 colorTo: "green"
 sdk: "gradio"
-sdk_version: 
+sdk_version: ""
 app_file: "app.py"
 pinned: false
 ---
