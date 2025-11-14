@@ -396,14 +396,14 @@ AI:
     
     try:
         # Appeler l'API HuggingFace pour générer la réponse
-        # Utilisation de Mistral-7B-Instruct
+        # Utilisation de Google Flan-T5 (gratuit et compatible text-generation)
         response = llm_client.text_generation(
             prompt,
-            model="mistralai/Mistral-7B-Instruct-v0.2",
+            model="google/flan-t5-xxl",
             max_new_tokens=300,
             temperature=0.7,
             top_p=0.95,
-            repetition_penalty=1.2
+            do_sample=True
         )
 
         # Nettoyer la réponse
@@ -415,6 +415,8 @@ AI:
         return response
     except Exception as e:
         print(f"Erreur lors de la génération: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return f"Désolé, une erreur s'est produite: {str(e)}\n\n⚠️ Assure-toi d'avoir ajouté ton token HuggingFace dans les Repository Secrets (Settings > HF_TOKEN)"
 
 # Créer l instance de gestion d historique
