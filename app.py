@@ -26,65 +26,11 @@ from langchain_community.embeddings.sentence_transformer import SentenceTransfor
 from huggingface_hub import InferenceClient
 import gradio as gr
 
-"""# GESTION DE LA BASE DE DONNÉES
+"""# GESTION DE LA BASE DE DONNÉES - VARIABLES GLOBALES"""
 
-## Etape 1 : récupération des fichiers PDFs:
-"""
-
-# Chemin du dossier où l'on souhaite télécharger les fichiers
-chemin_dossier = "./RAG_IPCC"
-if not os.path.exists(chemin_dossier):
-    os.makedirs(chemin_dossier)
-
-# URLs des fichiers à télécharger
-urls = { "6th_report": "https://www.ipcc.ch/report/ar6/syr/downloads/report/IPCC_AR6_SYR_FullVolume.pdf" }
-
-# Télécharger les fichiers dans le dossier (seulement s'ils n'existent pas déjà)
-for name, url in urls.items():
-    file_path = os.path.join(chemin_dossier, f"{name}.pdf")
-    if not os.path.exists(file_path):
-        print(f"Téléchargement de {name}...")
-        response = requests.get(url)
-        with open(file_path, 'wb') as file:
-            file.write(response.content)
-        print(f"{name} a été téléchargé.")
-    else:
-        print(f"{name} existe déjà, téléchargement ignoré.")
-
-"""## Etape 2 : Extraction du texte des fichiers PDF"""
-
-# Chemin du dossier contenant les fichiers PDF
-chemin_dossier = "./RAG_IPCC"
-
-# Liste des fichiers PDF dans le dossier
-fichiers_pdf = [f for f in os.listdir(chemin_dossier) if f.endswith('.pdf')]
-
-# Liste pour stocker le texte extrait de chaque PDF
-extracted_text = []
-
-# Boucle à travers chaque fichier PDF
-for pdf in fichiers_pdf:
-    print(f"*** PROCESSING FILE : {pdf} ***")
-
-    # Chemin complet du fichier PDF
-    chemin_pdf = os.path.join(chemin_dossier, pdf)
-
-    # Ouverture du fichier PDF en mode lecture binaire
-    with open(chemin_pdf, 'rb') as file:
-        # Création d'un objet de lecteur PDF
-        pdf_reader = PyPDF2.PdfReader(file)
-
-        # Boucle à travers chaque page du PDF
-        for page_num in range(len(pdf_reader.pages)):
-            # Extraction du texte de la page actuelle
-            page = pdf_reader.pages[page_num]
-            text = page.extract_text()
-
-            # Ajout du texte extrait à la liste
-            extracted_text.append({"document": pdf, "page": page_num, "content": text})
-
-# Affichage du texte extrait
-print(f"Extracted {len(extracted_text)} pages from PDFs")
+# Variables globales pour lazy loading
+retriever = None
+is_initialized = False
 
 """## Etape 3 : Traitement du texte en chunks propres"""
 
@@ -186,29 +132,6 @@ def contains_mainly_digits(text, threshold=0.5):
 def remove_mostly_digits_chunks(chunks, threshold=0.5):
   return [chunk for chunk in chunks if not contains_mainly_digits(chunk['content'])]
 
-#### EXECUTION ####
-
-# Split intelligent avec différents paramètres
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,
-    chunk_overlap=20,
-    length_function=len,
-    is_separator_regex=False,
-)
-
-# Split pertinent qui garde la structure du document
-chunks = []
-for page_content in extracted_text:
-  chunks_list = text_splitter.split_text(page_content['content'])
-
-  for chunk in chunks_list:
-    text=clean_text(chunk)
-    chunks.append({"document": page_content['document'],
-                   "page": page_content['page'],
-                   "content": text})
-chunks=remove_mostly_digits_chunks(chunks)
-print(f"Created {len(chunks)} chunks after processing")
-
 """# IMPLEMENTATION DU MODELE DE RECHERCHE RETENU"""
 
 class TextRetriever:
@@ -296,21 +219,102 @@ class TextRetriever:
         best_chunks = self.get_best_chunks(query, top_k=1)
         return best_chunks[0].page_content
 
-print("Initializing TextRetriever...")
-retriever=TextRetriever()
+"""# FONCTION D'INITIALISATION LAZY"""
 
-all_chunks=[]
-for chunk in chunks:
-  all_chunks.append(chunk['content'])
+def initialize_system():
+    """
+    Initialise le système RAG de manière lazy (seulement au premier appel).
+    Télécharge les PDFs, extrait le texte, crée les chunks et les embeddings.
+    """
+    global retriever, is_initialized
 
-# Vérifier si la base de données existe déjà pour éviter de la recréer
-db_path = "./chroma_db"
-if os.path.exists(db_path):
-    print("Loading existing embeddings database...")
-    retriever.load_embeddings(db_path)
-else:
-    print("Creating new embeddings database...")
-    retriever.store_embeddings(all_chunks, db_path)
+    if is_initialized:
+        return "Système déjà initialisé"
+
+    try:
+        print("=" * 50)
+        print("INITIALISATION DU SYSTÈME RAG")
+        print("=" * 50)
+
+        # Etape 1: Téléchargement des PDFs
+        chemin_dossier = "./RAG_IPCC"
+        if not os.path.exists(chemin_dossier):
+            os.makedirs(chemin_dossier)
+
+        urls = { "6th_report": "https://www.ipcc.ch/report/ar6/syr/downloads/report/IPCC_AR6_SYR_FullVolume.pdf" }
+
+        for name, url in urls.items():
+            file_path = os.path.join(chemin_dossier, f"{name}.pdf")
+            if not os.path.exists(file_path):
+                print(f"📥 Téléchargement de {name}...")
+                response = requests.get(url)
+                with open(file_path, 'wb') as file:
+                    file.write(response.content)
+                print(f"✅ {name} téléchargé")
+            else:
+                print(f"✅ {name} existe déjà")
+
+        # Etape 2: Extraction du texte
+        print("\n📄 Extraction du texte des PDFs...")
+        fichiers_pdf = [f for f in os.listdir(chemin_dossier) if f.endswith('.pdf')]
+        extracted_text = []
+
+        for pdf in fichiers_pdf:
+            chemin_pdf = os.path.join(chemin_dossier, pdf)
+            with open(chemin_pdf, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                for page_num in range(len(pdf_reader.pages)):
+                    page = pdf_reader.pages[page_num]
+                    text = page.extract_text()
+                    extracted_text.append({"document": pdf, "page": page_num, "content": text})
+
+        print(f"✅ {len(extracted_text)} pages extraites")
+
+        # Etape 3: Création des chunks
+        print("\n✂️  Création des chunks de texte...")
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=20,
+            length_function=len,
+            is_separator_regex=False,
+        )
+
+        chunks = []
+        for page_content in extracted_text:
+            chunks_list = text_splitter.split_text(page_content['content'])
+            for chunk in chunks_list:
+                text = clean_text(chunk)
+                chunks.append({"document": page_content['document'],
+                             "page": page_content['page'],
+                             "content": text})
+
+        chunks = remove_mostly_digits_chunks(chunks)
+        print(f"✅ {len(chunks)} chunks créés")
+
+        # Etape 4: Initialisation du retriever et des embeddings
+        print("\n🤖 Initialisation du TextRetriever...")
+        retriever = TextRetriever()
+
+        all_chunks = [chunk['content'] for chunk in chunks]
+
+        # Vérifier si la base de données existe déjà
+        db_path = "./chroma_db"
+        if os.path.exists(db_path):
+            print("📂 Chargement de la base de données existante...")
+            retriever.load_embeddings(db_path)
+        else:
+            print("🔨 Création de la base de données d'embeddings...")
+            retriever.store_embeddings(all_chunks, db_path)
+
+        is_initialized = True
+        print("\n" + "=" * 50)
+        print("✅ SYSTÈME INITIALISÉ AVEC SUCCÈS")
+        print("=" * 50)
+        return "✅ Système initialisé avec succès !"
+
+    except Exception as e:
+        print(f"❌ Erreur lors de l'initialisation: {str(e)}")
+        return f"❌ Erreur: {str(e)}"
 
 """# MODELE LLM
 
@@ -318,8 +322,6 @@ else:
 """
 
 # Initialiser le client d'inférence HuggingFace (modèle gratuit et léger)
-# Utilisation de Mistral-7B-Instruct via l'API gratuite au lieu de le télécharger
-print("Initializing HuggingFace Inference Client...")
 llm_client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.2")
 
 ## FONCTIONS
@@ -406,30 +408,48 @@ ch = ConversationHistoryLoader(k=3)
 
 # Fonction principale pour répondre aux questions
 def get_response(query):
+    global retriever, is_initialized
+
     try:
+        # Initialiser le système au premier appel
+        if not is_initialized:
+            init_message = initialize_system()
+            if "❌" in init_message:
+                return init_message
+
+        # Vérifier que le retriever est bien initialisé
+        if retriever is None:
+            return "❌ Le système n'est pas correctement initialisé. Veuillez réessayer."
+
         # Obtenir le contexte pertinent
         context = get_context_from_query(query)
-        
+
         # Générer la réponse avec contexte et historique
         chat_history = ch.create_conversation_history_prompt()
         response = generate_response_with_context(query, context, chat_history)
-        
+
         # Mettre à jour l historique
         ch.update_conversation_history(query, response)
-        
+
         return response
-        
+
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Erreur détaillée: {error_details}")
         return f"Erreur: {str(e)}"
 
 # Interface Gradio
 print("Creating Gradio interface...")
 iface = gr.Interface(
-    fn=get_response, 
-    inputs=gr.Textbox(lines=2, placeholder="Posez votre question sur le climat..."), 
+    fn=get_response,
+    inputs=gr.Textbox(lines=2, placeholder="Posez votre question sur le climat..."),
     outputs=gr.Textbox(lines=5, label="Réponse"),
-    title="🌍 RAG Chatbot - Questions Climatiques", 
-    description="Posez vos questions sur le changement climatique basées sur les rapports IPCC.",
+    title="🌍 RAG Chatbot - Questions Climatiques",
+    description="""Posez vos questions sur le changement climatique basées sur les rapports IPCC.
+
+    ⚠️ **Note**: Le système s'initialise automatiquement au premier appel (téléchargement du PDF + création des embeddings).
+    La première requête peut prendre 2-3 minutes. Les requêtes suivantes seront rapides !""",
     examples=[
         "Quels sont les principaux impacts du réchauffement climatique ?",
         "Comment les océans sont-ils affectés par le changement climatique ?",
