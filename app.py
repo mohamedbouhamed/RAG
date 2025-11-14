@@ -177,7 +177,7 @@ class TextRetriever:
             path (str): Chemin du répertoire de la base de données.
         """
         print(f"Loading embeddings from {path}...")
-        self.vector_database = Chroma(persist_directory=path, embedding=self.embedding_model)
+        self.vector_database = Chroma(persist_directory=path, embedding_function=self.embedding_model)
         print("Embeddings loaded successfully")
 
     def get_best_chunks(self, query, top_k=3):
