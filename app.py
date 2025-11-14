@@ -4,9 +4,6 @@ os.environ['TF_USE_LEGACY_KERAS'] = '1'
 
 # Imports standards
 import re
-from math import *
-import numpy as np
-import pandas as pd
 
 # Pour importer les fichiers PDF
 import requests
@@ -14,32 +11,19 @@ import PyPDF2
 
 # Traitement du texte
 import nltk
-from nltk.tokenize import word_tokenize
 nltk.download('punkt')
 nltk.download('punkt_tab')
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# Modèles de base
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.metrics import precision_recall_curve, auc
-from sentence_transformers import SentenceTransformer
-from sentence_transformers.util import cos_sim
-from tqdm import tqdm
-
 # Modèle Reranker
 from FlagEmbedding import FlagReranker
 
-# Tracé des graphes de résultat
-import matplotlib.pyplot as plt
-
 # Objet text retriever
-import langchain as lc
 from langchain_chroma import Chroma
 from langchain_community.embeddings.sentence_transformer import SentenceTransformerEmbeddings
 
 # LLM via HuggingFace Inference API (au lieu de llama-cpp)
 from huggingface_hub import InferenceClient
-import torch
 import gradio as gr
 
 """# GESTION DE LA BASE DE DONNÉES
