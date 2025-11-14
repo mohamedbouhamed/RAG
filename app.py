@@ -321,8 +321,11 @@ def initialize_system():
 ## Etape 1 : Generation d'une réponse avec HuggingFace Inference API
 """
 
-# Initialiser le client d'inférence HuggingFace (modèle gratuit et léger)
-llm_client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.2")
+# 🔒 Récupérer le token HF depuis les variables d'environnement (Repository Secrets)
+HF_API_KEY = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+
+# Initialiser le client d'inférence HuggingFace avec le token
+llm_client = InferenceClient(token=HF_API_KEY)
 
 ## FONCTIONS
 
@@ -384,24 +387,27 @@ AI:
 """
     
     try:
-        # Appeler l API HuggingFace pour générer la réponse
+        # Appeler l'API HuggingFace pour générer la réponse
+        # Utilisation de Mistral-7B-Instruct
         response = llm_client.text_generation(
             prompt,
+            model="mistralai/Mistral-7B-Instruct-v0.2",
             max_new_tokens=300,
             temperature=0.7,
             top_p=0.95,
             repetition_penalty=1.2
         )
-        
+
         # Nettoyer la réponse
         response = response.strip()
         response = re.sub(r"\[context\..*?\]", "", response)
         response = re.sub(r"Al:\s*", "", response)
-        
+        response = re.sub(r"AI:\s*", "", response)
+
         return response
     except Exception as e:
         print(f"Erreur lors de la génération: {str(e)}")
-        return f"Désolé, une erreur s est produite: {str(e)}"
+        return f"Désolé, une erreur s'est produite: {str(e)}\n\n⚠️ Assure-toi d'avoir ajouté ton token HuggingFace dans les Repository Secrets (Settings > HF_TOKEN)"
 
 # Créer l instance de gestion d historique
 ch = ConversationHistoryLoader(k=3)
