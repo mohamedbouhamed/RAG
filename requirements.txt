@@ -7,13 +7,9 @@ sentence-transformers
 FlagEmbedding
 transformers
 huggingface_hub
-llama-cpp-python
 PyPDF2
 nltk
 tqdm
 scikit-learn
-pandas
-torch
-detoxify
-evaluate
-matplotlib
+requests
+chromadb

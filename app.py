@@ -1,150 +1,46 @@
-
-from llama_cpp import Llama
-
-model_path = "TheBloke/Mistral-7B-Instruct-v0.2-GGUF"  # nom du modèle sur HF Hub
-llm = Llama(model_path=model_path)
-
-# Pour importer les fichiers PDF
-import os
-import requests
-
-# Extraction des fichiers PDF
-import PyPDF2
-
-# Traitement du texte
-import re
-import nltk
-from nltk.tokenize import word_tokenize
-nltk.download('punkt')
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-# Modèle TF
-from sklearn.feature_extraction.text import CountVectorizer
-
-# Modèle Dense Embeding
-from sentence_transformers import SentenceTransformer
-from sentence_transformers.util import cos_sim
-from tqdm import tqdm
-
-# Modèle Reranker
-from FlagEmbedding import FlagReranker
-
-# Tracé des graphes de résultat
-import matplotlib.pyplot as plt
-
-# Objet text retriever
-
-import langchain as lc
-from langchain_chroma import Chroma
-from langchain_community.embeddings.sentence_transformer import SentenceTransformerEmbeddings
-from FlagEmbedding import FlagReranker
-
-# Modèle LLM
-
-
-# Hallucinations
-from langchain.llms import LlamaCpp
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
-from llama_cpp import Llama
-from math import *
-import numpy as np
-from transformers import DebertaV2ForSequenceClassification, DebertaV2Tokenizer
-import torch
-from tqdm import tqdm
-nltk.download('punkt')
-# Téléchargement du modèle pour hallucinations
-import pandas as pd
-import torch
-import evaluate
-from transformers import GPT2LMHeadModel, GPT2Tokenizer
-from detoxify import Detoxify
-from sklearn.metrics import precision_recall_curve, auc
-
-
 # CORRECTION KERAS - À EXÉCUTER EN PREMIER
 import os
 os.environ['TF_USE_LEGACY_KERAS'] = '1'
 
+# Imports standards
+import re
+from math import *
+import numpy as np
+import pandas as pd
+
 # Pour importer les fichiers PDF
 import requests
-
-# Extraction des fichiers PDF
-# !pip install PyPDF2
 import PyPDF2
 
 # Traitement du texte
-# !pip install nltk
-# !pip install re
-import re
 import nltk
 from nltk.tokenize import word_tokenize
 nltk.download('punkt')
-# !pip install -qU langchain-text-splitters
+nltk.download('punkt_tab')
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# Modèle TF
+# Modèles de base
 from sklearn.feature_extraction.text import CountVectorizer
-# !pip install sentence-transformers
-
-# Modèle Dense Embeding
+from sklearn.metrics import precision_recall_curve, auc
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
 from tqdm import tqdm
 
 # Modèle Reranker
-# !pip install FlagEmbedding
 from FlagEmbedding import FlagReranker
 
 # Tracé des graphes de résultat
 import matplotlib.pyplot as plt
 
 # Objet text retriever
-# !pip install langchain
-# !pip install gradio
 import langchain as lc
-# !pip install langchain --q
-# !pip install langchain-community --q
-# !pip install langchain-chroma --q
-# !pip install FlagEmbedding -q
 from langchain_chroma import Chroma
 from langchain_community.embeddings.sentence_transformer import SentenceTransformerEmbeddings
-from FlagEmbedding import FlagReranker
 
-# Modèle LLM
-# !pip install transformers
-# !pip install huggingface_hub
-# !pip install llama-cpp-python
-
-# Hallucinations
-from langchain.llms import LlamaCpp
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
-from langchain.memory import ConversationBufferWindowMemory  # CORRECTION: Import manquant
-from llama_cpp import Llama
-from math import *
-import numpy as np
-from transformers import DebertaV2ForSequenceClassification, DebertaV2Tokenizer
+# LLM via HuggingFace Inference API (au lieu de llama-cpp)
+from huggingface_hub import InferenceClient
 import torch
-from tqdm import tqdm
-
-# Téléchargement du modèle pour hallucinations
-# !huggingface-cli download TheBloke/Mistral-7B-Instruct-v0.2-GGUF mistral-7b-instruct-v0.2.Q4_K_M.gguf --local-dir . --local-dir-use-symlinks False
-
-# Analyse de toxicité
-# !pip install torch
-# !pip install detoxify
-# !pip install datasets
-# !pip install scikit-learn
-# !pip install evaluate
-# !pip install pandas
-
-import pandas as pd
-import torch
-import evaluate
-from transformers import GPT2LMHeadModel, GPT2Tokenizer
-from detoxify import Detoxify
-from sklearn.metrics import precision_recall_curve, auc
+import gradio as gr
 
 """# GESTION DE LA BASE DE DONNÉES
 
@@ -156,24 +52,25 @@ chemin_dossier = "./RAG_IPCC"
 if not os.path.exists(chemin_dossier):
     os.makedirs(chemin_dossier)
 
-urls = { "6th_report": "https://www.ipcc.ch/report/ar6/syr/downloads/report/IPCC_AR6_SYR_FullVolume.pdf" }
-for name, url in urls.items():
-    response = requests.get(url)
-    with open(os.path.join(chemin_dossier, f"{name}.pdf"), 'wb') as f:
-        f.write(response.content)
 # URLs des fichiers à télécharger
+urls = { "6th_report": "https://www.ipcc.ch/report/ar6/syr/downloads/report/IPCC_AR6_SYR_FullVolume.pdf" }
 
-# Télécharger les fichiers dans le dossier
+# Télécharger les fichiers dans le dossier (seulement s'ils n'existent pas déjà)
 for name, url in urls.items():
-    response = requests.get(url)
-    with open(os.path.join(chemin_dossier, f"{name}.pdf"), 'wb') as file:
-        file.write(response.content)
-    print(f"{name} a été téléchargé.")
+    file_path = os.path.join(chemin_dossier, f"{name}.pdf")
+    if not os.path.exists(file_path):
+        print(f"Téléchargement de {name}...")
+        response = requests.get(url)
+        with open(file_path, 'wb') as file:
+            file.write(response.content)
+        print(f"{name} a été téléchargé.")
+    else:
+        print(f"{name} existe déjà, téléchargement ignoré.")
 
 """## Etape 2 : Extraction du texte des fichiers PDF"""
 
 # Chemin du dossier contenant les fichiers PDF
-chemin_dossier = "/Users/macbookair/Desktop/RAG/RAG_IPCC"
+chemin_dossier = "./RAG_IPCC"
 
 # Liste des fichiers PDF dans le dossier
 fichiers_pdf = [f for f in os.listdir(chemin_dossier) if f.endswith('.pdf')]
@@ -203,8 +100,7 @@ for pdf in fichiers_pdf:
             extracted_text.append({"document": pdf, "page": page_num, "content": text})
 
 # Affichage du texte extrait
-for text in extracted_text:
-    print(text)
+print(f"Extracted {len(extracted_text)} pages from PDFs")
 
 """## Etape 3 : Traitement du texte en chunks propres"""
 
@@ -248,17 +144,6 @@ def splitting_by_sentences(text):
     list_sent = paragraph.split(".")
     sentences = sentences + list_sent
   return sentences
-
-## TEST
-print(splitting_by_numer_of_words("Bonjour, aujourd'hui c'est. le 26 Mars 2019 ça marche?",5))
-
-# Fonction de splitting par phrase
-def splitting_by_sentences(text):
-  sentences=text.split('.')
-  return sentences
-
-## TEST
-print(splitting_by_sentences("Bonjour, aujourd'hui c'est. le 26 Mars 2019 ça marche?"))
 
 # Nettoyage du contenu de chaque chunk
 
@@ -332,21 +217,13 @@ chunks = []
 for page_content in extracted_text:
   chunks_list = text_splitter.split_text(page_content['content'])
 
-  # chunks_list = splitting_by_numer_of_words(page_content['content'])
-  # chunks_list = splitting_by_sentences(page_content['content'])
   for chunk in chunks_list:
     text=clean_text(chunk)
     chunks.append({"document": page_content['document'],
                    "page": page_content['page'],
                    "content": text})
 chunks=remove_mostly_digits_chunks(chunks)
-print(chunks)
-
-"""# COMPARAISON DES MODELES DE RECHERCHE (Information Retrieval)"""
-
-"""## Etape 1 : Implémentation du modèle BOW (TF-IDF)"""
-
-"""## Etape 2 : Implémentation du modèle Dense Embeding"""
+print(f"Created {len(chunks)} chunks after processing")
 
 """# IMPLEMENTATION DU MODELE DE RECHERCHE RETENU"""
 
@@ -359,7 +236,9 @@ class TextRetriever:
             embedding_model_name (str): Nom du modèle d'embedding.
             reranking_model_name (str): Nom du modèle de reranking.
         """
+        print(f"Loading embedding model: {embedding_model_name}")
         self.embedding_model = SentenceTransformerEmbeddings(model_name=embedding_model_name)
+        print(f"Loading reranker model: {reranking_model_name}")
         self.reranker_model = FlagReranker(reranking_model_name, use_fp16=True)
         self.vector_database = None  # Initialisation de la base de données vectorielle à None
 
@@ -371,7 +250,9 @@ class TextRetriever:
             chunks (list of str): Liste de chunks de texte à stocker.
             path (str): Chemin du répertoire où la base de données sera stockée.
         """
+        print(f"Storing embeddings to {path}...")
         self.vector_database = Chroma.from_texts(chunks, embedding=self.embedding_model, persist_directory=path)
+        print("Embeddings stored successfully")
 
     def load_embeddings(self, path):
         """
@@ -380,7 +261,9 @@ class TextRetriever:
         Args:
             path (str): Chemin du répertoire de la base de données.
         """
+        print(f"Loading embeddings from {path}...")
         self.vector_database = Chroma(persist_directory=path, embedding=self.embedding_model)
+        print("Embeddings loaded successfully")
 
     def get_best_chunks(self, query, top_k=3):
         """
@@ -409,7 +292,6 @@ class TextRetriever:
         """
         best_chunks = self.get_best_chunks(query, top_k=10)
         rerank_scores = []
-        # CORRECTION: Utiliser chunk_texts au lieu de text_chunks
         chunk_texts = [chunk.page_content if hasattr(chunk, 'page_content') else str(chunk) for chunk in best_chunks]
         for text in chunk_texts:
           score = self.reranker_model.compute_score([query, text])
@@ -430,62 +312,45 @@ class TextRetriever:
         best_chunks = self.get_best_chunks(query, top_k=1)
         return best_chunks[0].page_content
 
+print("Initializing TextRetriever...")
 retriever=TextRetriever()
 
 all_chunks=[]
 for chunk in chunks:
   all_chunks.append(chunk['content'])
-retriever.store_embeddings(all_chunks)
+
+# Vérifier si la base de données existe déjà pour éviter de la recréer
+db_path = "./chroma_db"
+if os.path.exists(db_path):
+    print("Loading existing embeddings database...")
+    retriever.load_embeddings(db_path)
+else:
+    print("Creating new embeddings database...")
+    retriever.store_embeddings(all_chunks, db_path)
 
 """# MODELE LLM
 
-## Etape 1 : Generation d'une réponse
+## Etape 1 : Generation d'une réponse avec HuggingFace Inference API
 """
 
-def load_llm(model_path):
-    # On charge le LLM sous format quantisé. Cf la descriptions des paramètres ci-dessous.
-    llm = LlamaCpp(
-        model_path=model_path, stop=["Question"], max_tokens=300, temperature=0,
-        n_ctx=8000, n_batch=1024, n_gpu_layers=-1, logits_all=True
-    )
-    return llm
-
-# llm = load_llm("mistral-7b-instruct-v0.2.Q4_K_M.gguf")
-from llama_cpp import Llama
-
-llm = Llama(model_path="TheBloke/Mistral-7B-Instruct-v0.2-GGUF", n_ctx=8000, n_batch=1024)
+# Initialiser le client d'inférence HuggingFace (modèle gratuit et léger)
+# Utilisation de Mistral-7B-Instruct via l'API gratuite au lieu de le télécharger
+print("Initializing HuggingFace Inference Client...")
+llm_client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.2")
 
 ## FONCTIONS
 
 # Basic context function.
 def get_context_from_query(query):
-  context1=retriever.get_best_chunks(query,4)
-  return context1
-
-# Fonction de generation de texte
-def conv_chain(llm):
-    template = """Below is an instruction that describes a task. Write a response that appropriately completes the request using the context provided.
-
-    Human: [INST] {instruction} [\INST]
-
-    Context: {context}
-
-    AI:\n
-    """
-
-    prompt = PromptTemplate(
-        input_variables=["instruction",'context'], template=template
-    )
-
-    llm_chain = LLMChain(
-        llm=llm,
-        prompt=prompt,
-        verbose=True,
-    )
-
-    return llm_chain
-
-# Nécessité d'ajouter un historique pour que la conversation ait un sens
+    chunks = retriever.get_best_chunks(query, 4)
+    # Extraire le texte des chunks
+    context_parts = []
+    for chunk in chunks:
+        if hasattr(chunk, 'page_content'):
+            context_parts.append(chunk.page_content)
+        else:
+            context_parts.append(str(chunk))
+    return "\n\n".join(context_parts)
 
 """## Etape 2 : Sauvegarde d'un historique limité de conversation"""
 
@@ -499,7 +364,7 @@ class ConversationHistoryLoader:
   def create_conversation_history_prompt(self):
     conversation = ''
 
-    if self.conversation_history == None:
+    if self.conversation_history == None or len(self.conversation_history) == 0:
       return conversation
     else:
       for exchange in reversed(self.conversation_history):
@@ -515,107 +380,66 @@ class ConversationHistoryLoader:
     if len(self.conversation_history) > self.k:
       self.conversation_history.pop()
 
-def conv_chain_with_history(llm):
-    template = """Below is an instruction that describes a task. Write a response that appropriately completes the request using the context provided and the previous conversation.
-
-    Context: {context}
-
-    {chat_history}
-
-    Human: [INST] {instruction} [\INST]
-
-    AI:\n
+# Fonction pour générer une réponse avec le contexte et l'historique
+def generate_response_with_context(instruction, context, chat_history=""):
     """
-
-    prompt = PromptTemplate(input_variables=["instruction",
-                                             'chat_history',
-                                             'context'],
-                            template=template)
-
-    llm_chain = LLMChain(
-        llm=llm,
-        prompt=prompt,
-        verbose=True,
-    )
-
-    return llm_chain
-
-def conv_chain_with_conversation_buffer(llm):
-    template = """Below is an instruction that describes a task. Write a response that appropriately completes the request using the context provided.
-
-    {chat_history}
-
-    Human: [INST] {instruction} [\INST]
-
-    Context: {context}
-
-    AI:\n
+    Génère une réponse en utilisant l'API HuggingFace Inference.
     """
+    # Construire le prompt complet
+    prompt = f"""Below is an instruction that describes a task. Write a response that appropriately completes the request using the context provided and the previous conversation.
 
-    prompt = PromptTemplate(
-        input_variables=["instruction",'chat_history', 'context'], template=template
-    )
+Context: {context}
 
-    memory = ConversationBufferWindowMemory(memory_key="chat_history", input_key="instruction", k=3)
+{chat_history}
 
-    llm_chain = LLMChain(
-        llm=llm,
-        prompt=prompt,
-        verbose=True,
-        memory=memory
-    )
+Human: [INST] {instruction} [/INST]
 
-    return llm_chain
-
-chain_with_history = conv_chain_with_history(llm)
-
-
-# Interface Gradio corrigée pour le RAG Chatbot
-
-import gradio as gr
-
-# CORRECTION 1: Créer l'instance de ConversationHistoryLoader
-ch = ConversationHistoryLoader(k=3)  # Garde les 3 derniers échanges
-
-def get_context_from_query(query):
-    chunks = retriever.get_best_chunks(query, 4)
-    # CORRECTION PRINCIPALE: Extraire le texte des chunks au lieu de retourner les objets
-    context_parts = []
-    for chunk in chunks:
-        if hasattr(chunk, 'page_content'):
-            context_parts.append(chunk.page_content)
-        else:
-            context_parts.append(str(chunk))
-    return "\n\n".join(context_parts)  # Retourner du texte, pas des objets
-
-def get_response(query):
+AI:
+"""
+    
     try:
-        # Obtenir le contexte (maintenant sous forme de texte)
-        context = get_context_from_query(query)
-        
-        # CORRECTION 2: Utiliser 'run' au lieu de 'predict'
-        res = chain_with_history.run(
-            instruction=query,
-            context=context,
-            chat_history=ch.create_conversation_history_prompt()
+        # Appeler l API HuggingFace pour générer la réponse
+        response = llm_client.text_generation(
+            prompt,
+            max_new_tokens=300,
+            temperature=0.7,
+            top_p=0.95,
+            repetition_penalty=1.2
         )
         
-        # CORRECTION 3: Mettre à jour l'historique
-        ch.update_conversation_history(query, res)
+        # Nettoyer la réponse
+        response = response.strip()
+        response = re.sub(r"\[context\..*?\]", "", response)
+        response = re.sub(r"Al:\s*", "", response)
         
-        # CORRECTION 4: Nettoyer la réponse des artefacts de debug
-        import re
-        # Supprimer les patterns de debug qui apparaissent
-        res = re.sub(r'\[context\..*?\]', '', res)
-        res = re.sub(r'Al:\s*', '', res)
-        res = res.strip()
+        return response
+    except Exception as e:
+        print(f"Erreur lors de la génération: {str(e)}")
+        return f"Désolé, une erreur s est produite: {str(e)}"
+
+# Créer l instance de gestion d historique
+ch = ConversationHistoryLoader(k=3)
+
+# Fonction principale pour répondre aux questions
+def get_response(query):
+    try:
+        # Obtenir le contexte pertinent
+        context = get_context_from_query(query)
         
-        return res
+        # Générer la réponse avec contexte et historique
+        chat_history = ch.create_conversation_history_prompt()
+        response = generate_response_with_context(query, context, chat_history)
+        
+        # Mettre à jour l historique
+        ch.update_conversation_history(query, response)
+        
+        return response
         
     except Exception as e:
         return f"Erreur: {str(e)}"
 
-# Interface Gradio (supprimer la duplication)
+# Interface Gradio
+print("Creating Gradio interface...")
 iface = gr.Interface(
     fn=get_response, 
     inputs=gr.Textbox(lines=2, placeholder="Posez votre question sur le climat..."), 
@@ -629,5 +453,7 @@ iface = gr.Interface(
     ]
 )
 
-# CORRECTION 5: Une seule ligne de lancement
-iface.launch()
+# Lancer l application
+if __name__ == "__main__":
+    print("Launching Gradio app...")
+    iface.launch(server_name="0.0.0.0", server_port=7860)
