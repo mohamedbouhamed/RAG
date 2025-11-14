@@ -11,8 +11,16 @@ import PyPDF2
 
 # Traitement du texte
 import nltk
-nltk.download('punkt')
-nltk.download('punkt_tab')
+# Téléchargement silencieux des données NLTK (seulement si nécessaire)
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt', quiet=True)
+try:
+    nltk.data.find('tokenizers/punkt_tab')
+except LookupError:
+    nltk.download('punkt_tab', quiet=True)
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Modèle Reranker
