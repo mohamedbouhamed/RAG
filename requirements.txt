@@ -1,29 +1,19 @@
-# PDF & Text processing
-PyPDF2
-nltk
-
-# Langchain & embeddings
+gradio==5.38.2
 langchain
-langchain-community
-langchain-chroma
 langchain-text-splitters
+langchain-chroma
+langchain-community
 sentence-transformers
 FlagEmbedding
-
-# Machine Learning & Transformers
 transformers
-torch
 huggingface_hub
 llama-cpp-python
-deberta-v2-pytorch
-
-# Toxicity / Evaluation
-detoxify
-datasets
-scikit-learn
-evaluate
-pandas
-
-# Utilities
-matplotlib
+PyPDF2
+nltk
 tqdm
+scikit-learn
+pandas
+torch
+detoxify
+evaluate
+matplotlib
