@@ -332,8 +332,12 @@ def initialize_system():
 # 🔒 Récupérer le token HF depuis les variables d'environnement (Repository Secrets)
 HF_API_KEY = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
 
-# Initialiser le client d'inférence HuggingFace avec le token
-llm_client = InferenceClient(token=HF_API_KEY)
+# Configuration de l'API HuggingFace Inference
+API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-xxl"
+headers = {"Authorization": f"Bearer {HF_API_KEY}"} if HF_API_KEY else {}
+
+# Initialiser le client d'inférence HuggingFace
+llm_client = InferenceClient(token=HF_API_KEY) if HF_API_KEY else InferenceClient()
 
 ## FONCTIONS
 
