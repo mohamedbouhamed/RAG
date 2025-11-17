@@ -333,7 +333,9 @@ def initialize_system():
 HF_API_KEY = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
 
 # Configuration de l'API HuggingFace Inference
-API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-xxl"
+# Utiliser un modèle plus petit et compatible avec le tier gratuit
+MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.2"
+API_URL = f"https://api-inference.huggingface.co/models/{MODEL_NAME}"
 headers = {"Authorization": f"Bearer {HF_API_KEY}"} if HF_API_KEY else {}
 
 # Initialiser le client d'inférence HuggingFace
@@ -399,29 +401,57 @@ AI:
 """
     
     try:
+        # Construire les messages pour le chat
+        system_message = f"""Tu es un assistant expert sur le changement climatique. Réponds aux questions en français en utilisant le contexte fourni des rapports IPCC.
+
+Contexte: {context}"""
+
+        messages = [
+            {"role": "system", "content": system_message}
+        ]
+
+        # Ajouter l'historique si présent
+        if chat_history:
+            messages.append({"role": "assistant", "content": f"Historique:\n{chat_history}"})
+
+        # Ajouter la question
+        messages.append({"role": "user", "content": instruction})
+
         # Appeler l'API HuggingFace pour générer la réponse
-        # Utilisation de Google Flan-T5 (gratuit et compatible text-generation)
-        response = llm_client.text_generation(
-            prompt,
-            model="google/flan-t5-xxl",
-            max_new_tokens=300,
+        # Utilisation de Mistral avec chat_completion
+        response = llm_client.chat_completion(
+            messages=messages,
+            model=MODEL_NAME,
+            max_tokens=300,
             temperature=0.7,
-            top_p=0.95,
-            do_sample=True
+            top_p=0.95
         )
 
-        # Nettoyer la réponse
-        response = response.strip()
-        response = re.sub(r"\[context\..*?\]", "", response)
-        response = re.sub(r"Al:\s*", "", response)
-        response = re.sub(r"AI:\s*", "", response)
+        # Extraire le contenu de la réponse
+        answer = response.choices[0].message.content
 
-        return response
+        # Nettoyer la réponse
+        answer = answer.strip()
+        answer = re.sub(r"\[context\..*?\]", "", answer)
+        answer = re.sub(r"Al:\s*", "", answer)
+        answer = re.sub(r"AI:\s*", "", answer)
+
+        return answer
     except Exception as e:
         print(f"Erreur lors de la génération: {str(e)}")
         import traceback
         traceback.print_exc()
-        return f"Désolé, une erreur s'est produite: {str(e)}\n\n⚠️ Assure-toi d'avoir ajouté ton token HuggingFace dans les Repository Secrets (Settings > HF_TOKEN)"
+        error_msg = str(e)
+
+        # Messages d'aide selon le type d'erreur
+        if "rate limit" in error_msg.lower():
+            return f"⏱️ Rate limit atteint. Veuillez réessayer dans quelques instants.\n\nDétails: {error_msg}"
+        elif "loading" in error_msg.lower() or "is currently loading" in error_msg.lower():
+            return f"⏳ Le modèle est en cours de chargement. Veuillez patienter 20-30 secondes et réessayer.\n\nDétails: {error_msg}"
+        elif "authorization" in error_msg.lower() or "token" in error_msg.lower():
+            return f"🔒 Problème d'authentification.\n\nDétails: {error_msg}\n\n⚠️ Vérifiez que le token HF_TOKEN dans Settings a les permissions 'read' ou 'inference'."
+        else:
+            return f"❌ Erreur: {error_msg}\n\nConsultez les logs de votre Space pour plus de détails."
 
 # Créer l instance de gestion d historique
 ch = ConversationHistoryLoader(k=3)
@@ -474,7 +504,8 @@ iface = gr.Interface(
         "Quels sont les principaux impacts du réchauffement climatique ?",
         "Comment les océans sont-ils affectés par le changement climatique ?",
         "Quelles sont les solutions pour réduire les émissions ?"
-    ]
+    ],
+    cache_examples=False  # Désactive le cache pour éviter l'initialisation au démarrage
 )
 
 # Lancer l application
